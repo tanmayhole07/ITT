@@ -5,6 +5,7 @@ import androidx.activity.result.ActivityResultCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -24,10 +25,20 @@ import android.provider.Settings;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.PopupMenu;
 import android.widget.Toast;
 
+import com.android.volley.AuthFailureError;
+import com.android.volley.DefaultRetryPolicy;
+import com.android.volley.Request;
+import com.android.volley.RequestQueue;
+import com.android.volley.Response;
+import com.android.volley.RetryPolicy;
+import com.android.volley.VolleyError;
+import com.android.volley.toolbox.StringRequest;
+import com.android.volley.toolbox.Volley;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.gms.tasks.Task;
@@ -39,11 +50,16 @@ import com.google.mlkit.vision.text.TextRecognition;
 import com.google.mlkit.vision.text.TextRecognizer;
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
+
 public class MainActivity extends AppCompatActivity {
     private MaterialButton inputImageBtn;
     private MaterialButton recognizedTextBtn;
     private ShapeableImageView imageIv;
     private EditText recognizedTextEt;
+    private Button sendToGSBtn;
 
     private static final String TAG = "MAIN_TAG";
 
@@ -59,6 +75,7 @@ public class MainActivity extends AppCompatActivity {
     private ProgressDialog progressDialog;
 
     private TextRecognizer textRecognizer;
+    String recognizedText;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -72,6 +89,7 @@ public class MainActivity extends AppCompatActivity {
         recognizedTextBtn = findViewById(R.id.recognizeTextbtn);
         imageIv = findViewById(R.id.imageIv);
         recognizedTextEt = findViewById(R.id.recognizedTextEt);
+        sendToGSBtn = findViewById(R.id.sendToGSBtn);
 
         progressDialog = new ProgressDialog(this);
         progressDialog.setTitle("Please wait");
@@ -97,6 +115,27 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        sendToGSBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+
+                int count = 1;
+                String  updatedText = recognizedTextEt.getText().toString();
+                String[] liness = updatedText.split("\\r?\\n");
+                count = liness.length;
+                Toast.makeText(MainActivity.this, Arrays.toString(liness), Toast.LENGTH_SHORT).show();
+
+                if (count == 1){
+                    addToGoogleSheet(recognizedTextEt.getText()+"");
+                }else {
+                    for (int i = 0; i <count ; i++) {
+                        addToGoogleSheet(liness[i]);
+                    }
+                }
+
+            }
+        });
+
     }
 
     private void recognizeTextFromImage() {
@@ -110,8 +149,15 @@ public class MainActivity extends AppCompatActivity {
                         @Override
                         public void onSuccess(Text text) {
                             progressDialog.dismiss();
-                            String recognizedText = text.getText();
+                            recognizedText = text.getText();
                             recognizedTextEt.setText(recognizedText);
+
+
+
+
+
+
+
                         }
                     })
                     .addOnFailureListener(new OnFailureListener() {
@@ -127,6 +173,61 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, "Failed preparing image due to "+ e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
+
+    private void addToGoogleSheet(String rt) {
+
+        String[] splitedText = rt.split("\\s+");
+        if (splitedText.length == 5){
+            String SubTask = splitedText[0];
+            String Task = splitedText[1];
+            String Category = splitedText[2];
+            String StartDate = splitedText[3];
+            String EndDate = splitedText[4];
+
+
+            StringRequest stringRequest = new StringRequest(Request.Method.POST, "https://script.google.com/macros/s/AKfycbw5-PMIs5pE02gedvgx-O3KJCp7VHsgusd2uhSphs7MyWaxfTf8DOgzNh3ZqTJc8ol5jw/exec", new Response.Listener<String>() {
+                @Override
+                public void onResponse(String response) {
+
+                    Toast.makeText(MainActivity.this, "Data Sent Successfully ", Toast.LENGTH_SHORT).show();
+                }
+            }, new Response.ErrorListener() {
+                @Override
+                public void onErrorResponse(VolleyError error) {
+
+                }
+            }){
+                @Nullable
+                @Override
+                protected Map<String, String> getParams(){
+
+                    Map<String, String> params = new HashMap<>();
+                    params.put("action", "addStudent");
+//                params.put("vdata",rt);
+                    params.put("vSubTask", SubTask);
+                    params.put("vTask", Task);
+                    params.put("vCategory", Category);
+                    params.put("vStartDate", StartDate);
+                    params.put("vEndDate", EndDate);
+
+                    return params;
+
+
+
+                }
+            };
+
+            int socketTimeOut = 50000;
+            RetryPolicy retryPolicy = new DefaultRetryPolicy(socketTimeOut, 0, DefaultRetryPolicy.DEFAULT_BACKOFF_MULT);
+            stringRequest.setRetryPolicy(retryPolicy);
+
+            RequestQueue requestQueue = Volley.newRequestQueue(this);
+            requestQueue.add(stringRequest);
+        }
+
+    }
+
+
 
     private void showInputImageDialog() {
         PopupMenu popupMenu = new PopupMenu(this, inputImageBtn);
